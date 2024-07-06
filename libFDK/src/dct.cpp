@@ -124,6 +124,11 @@ amm-info@iis.fraunhofer.de
 #include "FDK_tools_rom.h"
 #include "fft.h"
 
+#if defined(__riscv__)
+#include "riscv/dct_riscv.cpp"
+
+#endif
+
 void dct_getTables(const FIXP_WTP **ptwiddle, const FIXP_STP **sin_twiddle,
                    int *sin_step, int length) {
   const FIXP_WTP *twiddle;

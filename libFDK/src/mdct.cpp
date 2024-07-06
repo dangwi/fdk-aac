@@ -106,6 +106,11 @@ amm-info@iis.fraunhofer.de
 #include "dct.h"
 #include "fixpoint_math.h"
 
+#if defined(__riscv__)
+#include "riscv/mdct_riscv.cpp"
+
+#endif
+
 void mdct_init(H_MDCT hMdct, FIXP_DBL *overlap, INT overlapBufferSize) {
   hMdct->overlap.freq = overlap;
   // FDKmemclear(overlap, overlapBufferSize*sizeof(FIXP_DBL));
@@ -118,6 +123,9 @@ void mdct_init(H_MDCT hMdct, FIXP_DBL *overlap, INT overlapBufferSize) {
   hMdct->pFacZir = NULL;
   hMdct->pAsymOvlp = NULL;
 }
+
+#ifndef FUNCTION_mdct_block
+#define FUNCTION_mdct_block
 
 /*
 This program implements the forward MDCT transform on an input block of data.
@@ -268,6 +276,8 @@ INT mdct_block(H_MDCT hMdct, const INT_PCM *RESTRICT timeData,
 
   return nSpec * tl;
 }
+
+#endif
 
 void imdct_gain(FIXP_DBL *pGain_m, int *pGain_e, int tl) {
   FIXP_DBL gain_m = *pGain_m;

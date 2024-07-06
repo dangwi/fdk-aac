@@ -94,115 +94,149 @@ amm-info@iis.fraunhofer.de
 
 /******************* Library for basic calculation routines ********************
 
-   Author(s):   Marc Gayer
+   Author(s): Dangwi Xu @ sophgo
 
-   Description: fixed point intrinsics
+   Description: dct RISC-V assembler replacements.
 
 *******************************************************************************/
 
-#if !defined(CLZ_H)
-#define CLZ_H
+#if defined(__riscv_xthead) && __riscv_v == 7000
+#include <riscv_vector.h>
 
-#include "FDK_archdef.h"
-#include "machine_type.h"
+#ifndef FUNCTION_dct_IV
+#define FUNCTION_dct_IV
 
-#if defined(__arm__)
-#include "arm/clz_arm.h"
+void dct_IV(FIXP_DBL *pDat, int L, int *pDat_e) {
+  int sin_step = 0;
+  int M = L >> 1;
 
-#elif defined(__mips__)
-#include "mips/clz_mips.h"
+  const FIXP_WTP *twiddle;
+  const FIXP_STP *sin_twiddle;
 
-#elif defined(__x86__)
-#include "x86/clz_x86.h"
+  FDK_ASSERT(L >= 4);
 
-#elif defined(__powerpc__)
-#include "ppc/clz_ppc.h"
+  FDK_ASSERT(L >= 4);
 
-#elif defined(__riscv__)
-#include "riscv/clz_riscv.h"
+  dct_getTables(&twiddle, &sin_twiddle, &sin_step, L);
 
-#endif /* all cores */
+  {
+    FIXP_DBL *RESTRICT pDat_0 = &pDat[0];
+    FIXP_DBL *RESTRICT pDat_1 = &pDat[L - 2];
+    int i, vl, vlmax;
+    vuint32m1_t vDatidx, vDatlen;
+    vint32m1_t  vaacu1, vaacu2, vaacu3, vaacu4;
+    vint32m1_t  vmul1, vmul2, vresult;
+    vint32m1_t  v32twiddlep0, v32twiddlep1;
+    vint32m1_t  v32rep0, v32rep1, v32imp0, v32imp1;
 
-/*************************************************************************
- *************************************************************************
-    Software fallbacks for missing functions.
-**************************************************************************
-**************************************************************************/
+    vlmax   = vsetvlmax_e32m1();
+    vDatlen = vmv_v_x_u32m1((L - 2) << 2, vlmax);
+    vDatidx = vid_v_u32m1(vlmax);
+    vDatidx = vsll_vx_u32m1(vDatidx, 3, vlmax);
+    vDatidx = vsub_vv_u32m1(vDatlen, vDatidx, vlmax);
 
-#if !defined(FUNCTION_fixnormz_S)
-#ifdef FUNCTION_fixnormz_D
-inline INT fixnormz_S(SHORT a) {
-  if (a < 0) {
-    return 0;
-  }
-  return fixnormz_D((INT)(a)) - 16;
-}
-#else
-inline INT fixnormz_S(SHORT a) {
-  int leadingBits = 0;
-  a = ~a;
-  while (a & 0x8000) {
-    leadingBits++;
-    a <<= 1;
-  }
+    vwrite_csr(RVV_VXRM, 0b10);
+    for (i = 0; i < M - 1; i += 2 * vl) {
+      vl = vsetvl_e32m1((M - i) >> 1);
 
-  return (leadingBits);
-}
-#endif
-#endif
+      vaacu1 = vlxw_v_i32m1(&pDat[1], vDatidx, vl);
+      vaacu2 = vlse32_v_i32m1(&pDat[i + 0], 8, vl);
+      vaacu3 = vlse32_v_i32m1(&pDat[i + 1], 8, vl);
+      vaacu4 = vlxw_v_i32m1(&pDat[0], vDatidx, vl);
 
-#if !defined(FUNCTION_fixnormz_D)
-inline INT fixnormz_D(LONG a) {
-  INT leadingBits = 0;
-  a = ~a;
-  while (a & 0x80000000) {
-    leadingBits++;
-    a <<= 1;
-  }
+      v32twiddlep0 = vlse32_v_i32m1((int32_t*)&twiddle[i + 0], 8, vl);
+      v32twiddlep1 = vlse32_v_i32m1((int32_t*)&twiddle[i + 1], 8, vl);
 
-  return (leadingBits);
-}
-#endif
+      v32rep0 = vsll_vx_i32m1(v32twiddlep0, 16, vl);
+      v32rep1 = vsll_vx_i32m1(v32twiddlep1, 16, vl);
+      v32imp0 = vand_vx_i32m1(v32twiddlep0, 0xffff0000, vl);
+      v32imp1 = vand_vx_i32m1(v32twiddlep1, 0xffff0000, vl);
 
-/*****************************************************************************
+      vmul1 = vmulh_vv_i32m1(vaacu1, v32rep0, vl);
+      vmul2 = vmulh_vv_i32m1(vaacu2, v32imp0, vl);
+      vresult = vasub_vv_i32m1(vmul1, vmul2, vl);
+      vsse32_v_i32m1(&pDat[i + 1], 8, vresult, vl);
 
-    functionname: fixnorm_D
-    description:  Count leading ones or zeros of operand val for dfract/LONG INT
-values. Return this value minus 1. Return 0 if operand==0.
-*****************************************************************************/
-#if !defined(FUNCTION_fixnorm_S)
-#ifdef FUNCTION_fixnorm_D
-inline INT fixnorm_S(FIXP_SGL val) {
-  if (val == (FIXP_SGL)0) {
-    return 0;
-  }
-  return fixnorm_D((INT)(val)) - 16;
-}
-#else
-inline INT fixnorm_S(FIXP_SGL val) {
-  INT leadingBits = 0;
-  if (val != (FIXP_SGL)0) {
-    if (val < (FIXP_SGL)0) {
-      val = ~val;
+      vmul1 = vmulh_vv_i32m1(vaacu2, v32rep0, vl);
+      vmul2 = vmulh_vv_i32m1(vaacu1, v32imp0, vl);
+      vresult = vaadd_vv_i32m1(vmul1, vmul2, vl);
+      vsse32_v_i32m1(&pDat[i + 0], 8, vresult, vl);
+
+      vmul1 = vmulh_vv_i32m1(vaacu4, v32rep1, vl);
+      vmul2 = vmulh_vv_i32m1(vaacu3, v32imp1, vl);
+      vresult = vasub_vv_i32m1(vmul1, vmul2, vl);
+      vresult = vneg_v_i32m1(vresult, vl);
+      vsxw_v_i32m1(&pDat[1], vDatidx, vresult, vl);
+
+      vmul1 = vmulh_vv_i32m1(vaacu3, v32rep1, vl);
+      vmul2 = vmulh_vv_i32m1(vaacu4, v32imp1, vl);
+      vresult = vaadd_vv_i32m1(vmul1, vmul2, vl);
+      vsxw_v_i32m1(&pDat[0], vDatidx, vresult, vl);
+
+      vDatidx = vsub_vx_u32m1(vDatidx, vl * 8, vl);
     }
-    leadingBits = fixnormz_S(val) - 1;
-  }
-  return (leadingBits);
-}
-#endif
-#endif
 
-#if !defined(FUNCTION_fixnorm_D)
-inline INT fixnorm_D(FIXP_DBL val) {
-  INT leadingBits = 0;
-  if (val != (FIXP_DBL)0) {
-    if (val < (FIXP_DBL)0) {
-      val = ~val;
+    if (M & 1) {
+      FIXP_DBL accu1, accu2;
+      int idx0 = M & 0xfffffffe;
+      int idx1 = L - 2 - (M & 0xfffffffe);
+
+      accu1 = pDat[idx1 + 1];
+      accu2 = pDat[idx0 + 0];
+
+      cplxMultDiv2(&accu1, &accu2, accu1, accu2, twiddle[M - 1]);
+
+      pDat[idx0 + 0] = accu2 >> 1;
+      pDat[idx0 + 1] = accu1 >> 1;
     }
-    leadingBits = fixnormz_D(val) - 1;
   }
-  return (leadingBits);
-}
-#endif
 
-#endif /* CLZ_H */
+  fft(M, pDat, pDat_e);
+
+  {
+    FIXP_DBL *RESTRICT pDat_0 = &pDat[0];
+    FIXP_DBL *RESTRICT pDat_1 = &pDat[L - 2];
+    FIXP_DBL accu1, accu2, accu3, accu4;
+    int idx, i;
+
+    /* Sin and Cos values are 0.0f and 1.0f */
+    accu1 = pDat_1[0];
+    accu2 = pDat_1[1];
+
+    pDat_1[1] = -pDat_0[1];
+
+    /* 28 cycles for ARM926 */
+    for (idx = sin_step, i = 1; i<(M + 1)>> 1; i++, idx += sin_step) {
+      FIXP_STP twd = sin_twiddle[idx];
+      cplxMult(&accu3, &accu4, accu1, accu2, twd);
+      pDat_0[1] = accu3;
+      pDat_1[0] = accu4;
+
+      pDat_0 += 2;
+      pDat_1 -= 2;
+
+      cplxMult(&accu3, &accu4, pDat_0[1], pDat_0[0], twd);
+
+      accu1 = pDat_1[0];
+      accu2 = pDat_1[1];
+
+      pDat_1[1] = -accu3;
+      pDat_0[0] = accu4;
+    }
+
+    if ((M & 1) == 0) {
+      /* Last Sin and Cos value pair are the same */
+      accu1 = fMult(accu1, WTC(0x5a82799a));
+      accu2 = fMult(accu2, WTC(0x5a82799a));
+
+      pDat_1[0] = accu1 + accu2;
+      pDat_0[1] = accu1 - accu2;
+    }
+  }
+
+  /* Add twiddeling scale. */
+  *pDat_e += 2;
+}
+#endif // FUNCTION_dct_IV
+
+#endif // defined(__riscv_xthead) && __riscv_v == 7000

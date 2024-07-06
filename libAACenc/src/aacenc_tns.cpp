@@ -108,6 +108,11 @@ amm-info@iis.fraunhofer.de
 #include "aacenc_tns.h"
 #include "FDK_lpc.h"
 
+#if defined(__riscv__)
+#include "riscv/aacenc_tns_riscv.cpp"
+
+#endif
+
 #define FILTER_DIRECTION 0 /* 0 = up, 1 = down */
 
 static const FIXP_DBL acfWindowLong[12 + 3 + 1] = {
@@ -550,6 +555,8 @@ static inline INT FDKaacEnc_ScaleUpSpectrum(FIXP_DBL *dest, const FIXP_DBL *src,
   \param scaling of the lag
 
 ****************************************************************************/
+#ifndef FUNCTION_FDKaacEnc_CalcAutoCorrValue
+
 static inline FIXP_DBL FDKaacEnc_CalcAutoCorrValue(const FIXP_DBL *spectrum,
                                                    const INT startLine,
                                                    const INT stopLine,
@@ -572,6 +579,8 @@ static inline FIXP_DBL FDKaacEnc_CalcAutoCorrValue(const FIXP_DBL *spectrum,
 
   return result;
 }
+
+#endif
 
 /***************************************************************************/
 /*!

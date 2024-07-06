@@ -170,6 +170,10 @@ amm-info@iis.fraunhofer.de
 #include "armintr.h"
 #endif
 
+#if defined(__riscv) && !defined(__riscv__)
+#define __riscv__
+#endif
+
 /* Define preferred Multiplication type */
 
 #if defined(__mips__)
@@ -229,6 +233,12 @@ amm-info@iis.fraunhofer.de
 #define POW2COEFF_16BIT
 #define LDCOEFF_16BIT
 #define WINDOWTABLE_16BIT
+
+#elif defined(__riscv__)
+#define SINETABLE_16BIT
+#define WINDOWTABLE_16BIT
+#define POW2COEFF_16BIT
+#define LDCOEFF_16BIT
 
 #else
 #warning >>>> Please set architecture characterization defines for your platform (FDK_HIGH_PERFORMANCE)! <<<<
